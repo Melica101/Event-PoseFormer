@@ -19,7 +19,6 @@ import json
 import pandas as pd
 
 # Now import the necessary libraries from PoseFormer and hpe-core
-print("Importing PoseFormer libraries...")
 sys.path.append(os.getcwd() + '\PoseFormerV2-main')
 
 # PoseFormer imports (originally in PoseFormerV2-main\demo\vis1.py)
@@ -37,9 +36,6 @@ import numpy as np
 import sys, csv
 import h5py
 
-print("Importing hpe-core libraries...")
-print("sys.path before adding hpe-core paths:", sys.path)
-
 sys.path.append(os.getcwd() + '\hpe-core')
 
 from datasets.utils.parsing import import_yarp_skeleton_data, batchIterator
@@ -55,7 +51,7 @@ from pycore.moveenet.visualization.visualization import add_skeleton, movenet_to
 from pycore.moveenet.utils.utils import arg_parser
 from pycore.moveenet.task.task_tools import image_show, write_output, superimpose
 
-# Part 1: Event Data Processing (moveEnet)
+# Part 1: 2d pose estimation (moveEnet)
 def create_ts_list(fps, ts):
     out = dict()
     out['ts'] = list()
@@ -66,7 +62,7 @@ def create_ts_list(fps, ts):
 
 def import_h5(filename):
     hf = h5py.File(filename, 'r')
-    data = np.array(hf["events"][:]) #dataset_name is same as hdf5 object name
+    data = np.array(hf["events"][:])
     container = {}
     container['data'] = {}
     container['data']['ch0'] = {}
@@ -110,11 +106,6 @@ def save_event_video_and_csv(data_dvs_file, output_path, args):
                     mode='train')
     run_task = Task(cfg, model)
     run_task.modelLoad(cfg['ckpt'])
-    
-    # if args.skip is None:
-    #     args.skip = 1
-    # else:
-    #     args.skip = int(args.skip) + 1
 
     # Import and process data
     data_dvs = import_file(data_dvs_file)
@@ -132,7 +123,7 @@ def save_event_video_and_csv(data_dvs_file, output_path, args):
         kp_writer.writerow(['frame', 'joint', 'x', 'y', 'confidence'])
 
     if args.write_video:
-        video_output_path = os.path.join(output_path, "video.mp4")
+        video_output_path = os.path.join(output_path, "event_video.mp4")
         writer = cv2.VideoWriter(video_output_path, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), args.fps,
                              (args.frame_width, args.frame_height))
     
@@ -148,8 +139,7 @@ def save_event_video_and_csv(data_dvs_file, output_path, args):
             
         for ei in range(batch_size):
             rep.update(vx=int(events['x'][ei]), vy=int(events['y'][ei]))
-        # if fi % args.skip != 0:
-        #     continue
+
         if args.skip is not None:
             start, end = map(int, args.skip.split('-'))
             if start <= fi <= end:
@@ -180,7 +170,7 @@ def save_event_video_and_csv(data_dvs_file, output_path, args):
         writer.release()
         print(f"Video saved to: {video_output_path}")
 
-# Part 2: CSV to NPZ
+# Part 2: Change 2d pose output CSV file to NPZ
 def convert_csv_to_npz(csv_path, output_path):
     df = pd.read_csv(csv_path)
     required_cols = {"frame", "joint", "x", "y"}
@@ -203,9 +193,9 @@ def convert_csv_to_npz(csv_path, output_path):
     np.savez(output_path, keypoints=keypoints)
     print(f"2d pose csv file converted to npz: {output_path}")
 
-# Part 3: Convert 13-Joint to 17-Joint
+# Part 3: Convert 13-joint file to 17-joint
 def convert_13_to_17_joints(input_file, output_file):
-    data = np.load(input_file)  # Load original 13-joint keypoints
+    data = np.load(input_file, allow_pickle=True) 
     keypoints_13 = data["keypoints"]
 
     mapping_13 = {
@@ -242,17 +232,11 @@ def convert_13_to_17_joints(input_file, output_file):
     np.savez(output_file, keypoints=np.array([keypoints_17]))
     print(f"2d pose npz file converted to 17 joints: {output_file}")
 
-# Part 4: 3D Pose Estimation
+# Part 4: 3D Pose Estimation (PoseFormerV2)
 
 plt.switch_backend('agg')
 matplotlib.rcParams['pdf.fonttype'] = 42
 matplotlib.rcParams['ps.fonttype'] = 42
-
-def save_predictions_3d(all_predictions, output_dir, filename='predictions_3d.npz'):
-    all_predictions = np.concatenate(all_predictions, axis=0)  # Concatenate predictions from all clips
-    output_path = os.path.join(output_dir, filename)
-    np.savez_compressed(output_path, predictions=all_predictions)
-    print(f"All predictions saved to {output_path}")
 
 def show2Dpose(kps, img):
     kps = np.asarray(kps)
@@ -278,28 +262,7 @@ def show2Dpose(kps, img):
         cv2.circle(img, (x2, y2), radius=3, color=(0, 255, 0), thickness=-1)
 
     return img
-    # connections = [[0, 1], [1, 2], [2, 3], [0, 4], [4, 5],
-    #                [5, 6], [0, 7], [7, 8], [8, 9], [9, 10],
-    #                [8, 11], [11, 12], [12, 13], [8, 14], [14, 15], [15, 16]]
-
-    # LR = np.array([0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0], dtype=bool)
-
-    # lcolor = (255, 0, 0)
-    # rcolor = (0, 0, 255)
-    # thickness = 3
-
-    # for j,c in enumerate(connections):
-    #     start = map(int, kps[c[0]])
-    #     end = map(int, kps[c[1]])
-    #     start = list(start)
-    #     end = list(end)
-    #     cv2.line(img, (start[0], start[1]), (end[0], end[1]), lcolor if LR[j] else rcolor, thickness)
-    #     cv2.circle(img, (start[0], start[1]), thickness=-1, color=(0, 255, 0), radius=3)
-    #     cv2.circle(img, (end[0], end[1]), thickness=-1, color=(0, 255, 0), radius=3)
-
-    # return img
-
-
+    
 def show3Dpose(vals, ax):
     ax.view_init(elev=15., azim=70)
 
@@ -334,8 +297,9 @@ def show3Dpose(vals, ax):
     ax.tick_params('z', labelleft = False)
 
 def img2video(video_path, output_dir):
-    cap = cv2.VideoCapture(video_path)
+    cap = cv2.VideoCapture(video_path + '/event_video.mp4')
     fps = int(cap.get(cv2.CAP_PROP_FPS)) + 5
+    print("Extracted FPS:", fps)
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
 
@@ -348,7 +312,7 @@ def img2video(video_path, output_dir):
 
     size = (img.shape[1], img.shape[0])
 
-    videoWrite = cv2.VideoWriter(output_dir + f'/3d_{os.path.basename(video_path)}' + '.mp4', fourcc, fps, size)
+    videoWrite = cv2.VideoWriter(output_dir + f'/3d_demo.mp4', fourcc, fps, size)
 
     for name in names:
         img = cv2.imread(name)
@@ -356,89 +320,6 @@ def img2video(video_path, output_dir):
 
     videoWrite.release()
 
-# def get_pose3D(video_path, output_dir, save_images=True, save_demo=True):
-#     args = argparse.Namespace(embed_dim_ratio=32, depth=4, frames=243, number_of_kept_frames=27, 
-#                               number_of_kept_coeffs=27, pad=(243 - 1) // 2, previous_dir='checkpoint/', 
-#                               n_joints=17, out_joints=17)
-#     model = nn.DataParallel(Model(args=args)).cuda()
-#     model_dict = model.state_dict()
-#     model_path = sorted(glob.glob(os.path.join(args.previous_dir, '27_243_45.2.bin')))[0]
-#     pre_dict = torch.load(model_path)
-#     model.load_state_dict(pre_dict['model_pos'], strict=True)
-#     model.eval()
-
-#     keypoints = np.load(output_dir + 'input_2D/keypoints_17.npz', allow_pickle=True)['keypoints']
-#     cap = cv2.VideoCapture(video_path)
-#     video_length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-#     output_dir_2D = output_dir + 'pose2D/'
-#     output_dir_3D = output_dir + 'pose3D/'
-#     os.makedirs(output_dir_2D, exist_ok=True)
-#     os.makedirs(output_dir_3D, exist_ok=True)
-
-#     all_predictions = []
-
-#     for i in tqdm(range(video_length)):
-#         ret, img = cap.read()
-#         if img is None:
-#             continue
-#         img_size = img.shape
-
-#         start = max(0, i - args.pad)
-#         end = min(i + args.pad, len(keypoints[0])-1)
-#         input_2D_no = keypoints[0][start:end+1]
-
-#         left_pad, right_pad = 0, 0
-#         if input_2D_no.shape[0] != args.frames:
-#             if i < args.pad:
-#                 left_pad = args.pad - i
-#             if i > len(keypoints[0]) - args.pad - 1:
-#                 right_pad = i + args.pad - (len(keypoints[0]) - 1)
-#             input_2D_no = np.pad(input_2D_no, ((left_pad, right_pad), (0, 0), (0, 0)), 'edge')
-
-#         input_2D = normalize_screen_coordinates(input_2D_no, w=img_size[1], h=img_size[0])
-#         input_2D_aug = copy.deepcopy(input_2D)
-#         input_2D_aug[:, :, 0] *= -1
-#         input_2D_aug[:, [4,5,6,11,12,13]] = input_2D_aug[:, [1,2,3,14,15,16]]
-#         input_2D = np.concatenate((np.expand_dims(input_2D, axis=0), np.expand_dims(input_2D_aug, axis=0)), 0)
-#         input_2D = input_2D[np.newaxis, :, :, :, :]
-#         input_2D = torch.from_numpy(input_2D.astype('float32')).cuda()
-
-#         output_3D_non_flip = model(input_2D[:, 0]) 
-#         output_3D_flip = model(input_2D[:, 1])
-#         output_3D_flip[:, :, :, 0] *= -1
-#         output_3D_flip[:, :, [4,5,6,11,12,13], :] = output_3D_flip[:, :, [1,2,3,14,15,16], :]
-#         output_3D = (output_3D_non_flip + output_3D_flip) / 2
-
-#         output_3D[:, :, 0, :] = 0
-#         post_out = output_3D[0, 0].cpu().detach().numpy()
-
-#         rot = np.array([0.1407056450843811, -0.1500701755285263, -0.755240797996521, 0.6223280429840088], dtype='float32')
-#         post_out = camera_to_world(post_out, R=rot, t=0)
-#         post_out[:, 2] -= np.min(post_out[:, 2])
-
-#         if save_images:
-#             # Save 2D and 3D poses as images
-#             image = show2Dpose(input_2D_no, copy.deepcopy(img))
-#             cv2.imwrite(output_dir_2D + str(('%04d'% i)) + '_2D.png', image)
-
-#             fig = plt.figure(figsize=(9.6, 5.4))
-#             gs = gridspec.GridSpec(1, 1)
-#             gs.update(wspace=-0.00, hspace=0.05)
-#             ax = plt.subplot(gs[0], projection='3d')
-#             show3Dpose(post_out, ax)
-#             plt.savefig(output_dir_3D + str(('%04d'% i)) + '_3D.png', dpi=200, format='png', bbox_inches='tight')
-#             plt.clf()
-#             plt.close(fig)
-
-#         all_predictions.append(post_out)
-
-#     save_predictions_3d(all_predictions, output_dir, filename='predictions_3d.npz')
-#     print('Generating 3D pose successful!')
-
-#     if save_demo:
-#         # Generate demo (2D + 3D poses)
-#         img2video(video_path, output_dir)
 def showimage(ax, img):
     ax.set_xticks([])
     ax.set_yticks([]) 
@@ -474,6 +355,12 @@ def load_model_weights(model, ckpt_path, device):
         # If you *know* shapes match except for harmless heads, you can relax:
         # model.load_state_dict(state, strict=False)
         raise e
+    
+def save_predictions_3d(all_predictions, output_dir, filename='predictions_3d.npz'):
+    all_predictions = np.concatenate(all_predictions, axis=0)  # Concatenate predictions from all clips
+    output_path = os.path.join(output_dir, filename)
+    np.savez_compressed(output_path, predictions=all_predictions)
+    print(f"All predictions saved to {output_path}")
 
 def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=False):
     args = argparse.Namespace(
@@ -495,19 +382,16 @@ def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=Fal
 
     # Load weights
     model_path = sorted(glob.glob(os.path.join(args.previous_dir, '27_243_45.2.bin')))[0]
-    # pre_dict = torch.load(model_path, map_location=device)
     load_model_weights(model, model_path, device)
-    # model.load_state_dict(pre_dict['model_pos'], strict=True)
     model.eval()
 
     # Load 2D keypoints
     keypoints = np.load(video_path + '/keypoints_17.npz', allow_pickle=True)['keypoints']
-    cap = cv2.VideoCapture(video_path + '/video.mp4')
-    print("Opened video for 3D pose estimation:", video_path + '/video.mp4')
+    cap = cv2.VideoCapture(video_path + '/event_video.mp4')
     video_length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    output_dir_2D = video_path + '/pose2D/'
-    output_dir_3D = video_path + '/pose3D/'
+    output_dir_2D = output_dir + '/pose2D/'
+    output_dir_3D = output_dir + '/pose3D/'
     os.makedirs(output_dir_2D, exist_ok=True)
     os.makedirs(output_dir_3D, exist_ok=True)
 
@@ -516,7 +400,7 @@ def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=Fal
     print("Total frames to process:", video_length)
     
     if keypoints.ndim == 4:
-      # (P, T, J, 2) -> pick first person
+      # (P, T, J, 2)
       kp = keypoints[0]
     elif keypoints.ndim == 3:
       # (T, J, 2)
@@ -532,18 +416,7 @@ def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=Fal
         if img is None:
             continue
         img_size = img.shape
-        # start = max(0, i - args.pad)
-        # end = min(i + args.pad, len(keypoints[0])-1)
-        # input_2D_no = keypoints[0][start:end+1]
 
-        # # Pad sequence
-        # left_pad, right_pad = 0, 0
-        # if input_2D_no.shape[0] != args.frames:
-        #     if i < args.pad:
-        #         left_pad = args.pad - i
-        #     if i > len(keypoints[0]) - args.pad - 1:
-        #         right_pad = i + args.pad - (len(keypoints[0]) - 1)
-        #     input_2D_no = np.pad(input_2D_no, ((left_pad, right_pad), (0, 0), (0, 0)), 'edge')
         start = max(0, i - args.pad)
         end   = min(i + args.pad, num_frames - 1)
         
@@ -565,20 +438,32 @@ def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=Fal
 
         # Normalize
         input_2D = normalize_screen_coordinates(input_2D_no, w=img_size[1], h=img_size[0])
+        # Flip Augmentation
+        joints_left  = [4, 5, 6, 11, 12, 13]
+        joints_right = [1, 2, 3, 14, 15, 16]
+        
         input_2D_aug = copy.deepcopy(input_2D)
-        input_2D_aug[:, :, 0] *= -1
-        input_2D_aug[:, [4,5,6,11,12,13]] = input_2D_aug[:, [1,2,3,14,15,16]]
-        input_2D = np.concatenate((np.expand_dims(input_2D, axis=0), np.expand_dims(input_2D_aug, axis=0)), 0)
-        input_2D = input_2D[np.newaxis, :, :, :, :]
-        input_2D = torch.from_numpy(input_2D.astype('float32')).to(device)
+        input_2D_aug[:, :, 0] *= -1  # mirror x-coordinates
+        input_2D_aug[:, joints_left + joints_right] = input_2D_aug[:, joints_right + joints_left]
+
+        # Combine normal and flipped
+        input_2D = np.concatenate((
+            np.expand_dims(input_2D, axis=0),
+            np.expand_dims(input_2D_aug, axis=0)
+            ), axis=0)
+
+        input_2D = input_2D[np.newaxis, :, :, :, :].astype('float32')
+        input_2D = torch.from_numpy(input_2D).to(device)
 
         with torch.no_grad():
             output_3D_non_flip = model(input_2D[:, 0])
             output_3D_flip = model(input_2D[:, 1])
 
         output_3D_flip[:, :, :, 0] *= -1
-        output_3D_flip[:, :, [4,5,6,11,12,13], :] = output_3D_flip[:, :, [1,2,3,14,15,16], :]
+        output_3D_flip[:, :, joints_left + joints_right, :] = output_3D_flip[:, :, joints_right + joints_left, :]
+        # Average both
         output_3D = (output_3D_non_flip + output_3D_flip) / 2
+
         output_3D[:, :, 0, :] = 0
         post_out = output_3D[0, 0].cpu().detach().numpy()
 
@@ -587,11 +472,10 @@ def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=Fal
         post_out[:, 2] -= np.min(post_out[:, 2])
 
         if save_images:
-            # after you've padded input_2D_no to (T_window=args.frames, J, 2)
+            # after padding input_2D_no to (T_window=args.frames, J, 2)
             kps_curr = input_2D_no[args.pad, :, :2]   # shape (J,2), pixels
             image = show2Dpose(kps_curr, copy.deepcopy(img))
 
-            # image = show2Dpose(input_2D_no, copy.deepcopy(img))
             cv2.imwrite(output_dir_2D + str(('%04d'% i)) + '_2D.png', image)
 
             fig = plt.figure(figsize=(9.6, 5.4))
@@ -636,7 +520,7 @@ def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=Fal
             ax.set_title("Reconstruction", fontsize = font_size)
 
             ## save
-            output_dir_pose = video_path +'/pose/'
+            output_dir_pose = output_dir +'/pose/'
             os.makedirs(output_dir_pose, exist_ok=True)
             plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
             plt.margins(0, 0)
@@ -644,7 +528,7 @@ def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=Fal
             plt.clf()
             plt.close(fig)
             
-        img2video(video_path, video_path)
+        img2video(video_path, output_dir)
 
 # Main function to integrate all parts
 def main():
@@ -652,10 +536,10 @@ def main():
     parser.add_argument('--event_input_path', type=str, required=True, help='Path to the event input folder')
     parser.add_argument('--output_dir', type=str, required=True, help='Output directory for results')
     parser.add_argument('--write_csv', action='store_true', default=True, help='Write 2D keypoints to CSV')
-    parser.add_argument("--write_video", action='store_true', help="Set path with file name to save video")
+    parser.add_argument("--write_video", action='store_true', help="Write event video")
     parser.add_argument('--save_images', action='store_true', help='Save 2D and 3D pose images (optional)')
     parser.add_argument('--save_demo', action='store_true', help='Generate demo video (optional)')
-    parser.add_argument('--skip', type=str, default=None, help='Skip frames')
+    parser.add_argument('--skip', type=str, default=None, help='Skip range of frames')
     parser.add_argument('-eros_kernel', help='EROS kernel size', default=8, type=int)
     parser.add_argument('-frame_width', help='', default=640, type=int)
     parser.add_argument('-frame_height', help='', default=480, type=int)
@@ -674,25 +558,21 @@ def main():
     cfg['ckpt'] = args.ckpt
 
     # Step 1: Process Event Data into 2D Pose Predictions
-    output_dir_event_data = os.path.join(args.output_dir, f'{os.path.split(os.path.split(args.event_input_path)[0])[1]}')
-    os.makedirs(output_dir_event_data, exist_ok=True)
-    save_event_video_and_csv(args.event_input_path, output_dir_event_data, args)
+    output_dir_current = os.path.join(args.output_dir, f'{os.path.split(os.path.split(args.event_input_path)[0])[1]}')
+    os.makedirs(output_dir_current, exist_ok=True)
+    save_event_video_and_csv(args.event_input_path, output_dir_current, args)
 
     # Step 2: Convert CSV to NPZ
-    csv_input_path = os.path.join(output_dir_event_data, "moveEnet_keypoints.csv")
-    npz_output_path = os.path.join(output_dir_event_data, "moveEnet_keypoints.npz")
+    csv_input_path = os.path.join(output_dir_current, "moveEnet_keypoints.csv")
+    npz_output_path = os.path.join(output_dir_current, "moveEnet_keypoints.npz")
     convert_csv_to_npz(csv_input_path, npz_output_path)
 
     # Step 3: Convert 13-joint keypoints to 17-joint keypoints
-    keypoints_17_output = os.path.join(output_dir_event_data, "keypoints_17.npz")
+    keypoints_17_output = os.path.join(output_dir_current, "keypoints_17.npz")
     convert_13_to_17_joints(npz_output_path, keypoints_17_output)
 
-    # Step 4: Save Event Video (Optional, if you want a video output)
-    # video_output_path = os.path.join(args.output_dir, f"{os.path.basename(args.event_input_path)}.mp4")
-    # save_event_video(args.event_input_path, video_output_path, args)
-
-    # Step 5: Generate 3D Pose from the event video and 2D keypoints
-    get_pose3D(output_dir_event_data, args.output_dir, save_images=args.save_images, save_demo=args.save_demo)
+    # Step 4: Generate 3D Pose from the 2D keypoints
+    get_pose3D(output_dir_current, output_dir_current, save_images=args.save_images, save_demo=args.save_demo)
 
 if __name__ == '__main__':
     main()
