@@ -1,0 +1,6 @@
+outputs/
+
+# Python virtual environments
+.venv/
+venv/
+myenv/
