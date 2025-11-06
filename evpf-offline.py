@@ -362,15 +362,15 @@ def save_predictions_3d(all_predictions, output_dir, filename='predictions_3d.np
     np.savez_compressed(output_path, predictions=all_predictions)
     print(f"All predictions saved to {output_path}")
 
-def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=False):
+def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=False, causal=False):
     args = argparse.Namespace(
         embed_dim_ratio=32, depth=4, frames=243, number_of_kept_frames=27,
         number_of_kept_coeffs=27, pad=(243 - 1) // 2, previous_dir='PoseformerV2-main/checkpoint/',
-        n_joints=17, out_joints=17, gpu=gpu
+        n_joints=17, out_joints=17
     )
 
     # Select device
-    device = torch.device("cuda" if torch.cuda.is_available() and args.gpu else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() and gpu else "cpu")
     print(f"Using device: {device}")
 
     # Initialize model
@@ -410,34 +410,50 @@ def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=Fal
   
     num_frames = kp.shape[0]
     loop_len = min(video_length, num_frames)
+    print("Using causal mode:", causal)
 
     for i in tqdm(range(loop_len)):
         ret, img = cap.read()
         if img is None:
             continue
         img_size = img.shape
-
-        start = max(0, i - args.pad)
-        end   = min(i + args.pad, num_frames - 1)
         
-        # (T_window, J, 2) or possibly (J,2) if start==end
-        input_2D_no = kp[start:end+1]
-        
-        # Ensure 3D (T_window, J, 2)
-        if input_2D_no.ndim == 2:
-            input_2D_no = input_2D_no[np.newaxis, ...]  # add time axis
+        if causal:
+            start = max(0, i - args.pad)
+            input_2D_no = kp[start:i+1]  # include current frame
 
-        # Pad along time dimension to args.frames
-        left_pad = right_pad = 0
-        if input_2D_no.shape[0] != args.frames:
-            if i < args.pad:
-                left_pad = args.pad - i
-            if i > num_frames - args.pad - 1:
-                right_pad = i + args.pad - (num_frames - 1)
-            input_2D_no = np.pad(input_2D_no,((left_pad, right_pad), (0, 0), (0, 0)),mode='edge')
+            # Ensure 3D (T_window, J, 2)
+            if input_2D_no.ndim == 2:
+               input_2D_no = input_2D_no[np.newaxis, ...]
+
+            # Pad future frames (duplicate current frame)
+            future_frames = np.repeat(kp[i:i+1], args.pad, axis=0)
+
+            # Combine past + current + padded future
+            input_2D_no = np.concatenate((input_2D_no, future_frames), axis=0)
+        else: 
+            start = max(0, i - args.pad)
+            end   = min(i + args.pad, num_frames - 1)
+        
+            # (T_window, J, 2) or possibly (J,2) if start==end
+            input_2D_no = kp[start:end+1]
+        
+            # Ensure 3D (T_window, J, 2)
+            if input_2D_no.ndim == 2:
+               input_2D_no = input_2D_no[np.newaxis, ...]  # add time axis
+
+            # Pad along time dimension to args.frames
+            left_pad = right_pad = 0
+            if input_2D_no.shape[0] != args.frames:
+                if i < args.pad:
+                   left_pad = args.pad - i
+                if i > num_frames - args.pad - 1:
+                    right_pad = i + args.pad - (num_frames - 1)
+                input_2D_no = np.pad(input_2D_no,((left_pad, right_pad), (0, 0), (0, 0)),mode='edge')
 
         # Normalize
         input_2D = normalize_screen_coordinates(input_2D_no, w=img_size[1], h=img_size[0])
+        
         # Flip Augmentation
         joints_left  = [4, 5, 6, 11, 12, 13]
         joints_right = [1, 2, 3, 14, 15, 16]
@@ -535,16 +551,17 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--event_input_path', type=str, required=True, help='Path to the event input folder')
     parser.add_argument('--output_dir', type=str, required=True, help='Output directory for results')
-    parser.add_argument('--write_csv', action='store_true', default=True, help='Write 2D keypoints to CSV')
-    parser.add_argument("--write_video", action='store_true', help="Write event video")
+    parser.add_argument('--write_csv', type=str2bool, nargs='?', const=True, default=True, help='Write 2D keypoints to CSV')
+    parser.add_argument("--write_video", type=str2bool, nargs='?', const=True, default=True, help="Write event video")
     parser.add_argument('--save_images', action='store_true', help='Save 2D and 3D pose images (optional)')
     parser.add_argument('--save_demo', action='store_true', help='Generate demo video (optional)')
     parser.add_argument('--skip', type=str, default=None, help='Skip range of frames')
+    parser.add_argument('--gpu', action='store_true', help="Use GPU for 3D pose estimation")
+    parser.add_argument('--causal', action='store_true', help="Use only past frames for 3D pose estimation")
     parser.add_argument('-eros_kernel', help='EROS kernel size', default=8, type=int)
     parser.add_argument('-frame_width', help='', default=640, type=int)
     parser.add_argument('-frame_height', help='', default=480, type=int)
     parser.add_argument('-gauss_kernel', help='Gaussian filter for EROS', default=7, type=int)
-    parser.add_argument('-input', help='Path to input folder (with the data.log file in it)', default=None, type=str)
     parser.add_argument("-ckpt", type=str, default='hpe-core/example/movenet/models/e97_valacc0.81209.pth', help="path to the ckpt. Default: MoveEnet checkpoint.")
     parser.add_argument('-fps', help='Output frame rate', default=50, type=int)
     parser.add_argument('-stop', help='Set to an integer value to stop early after these frames', default=None, type=int)
@@ -572,7 +589,7 @@ def main():
     convert_13_to_17_joints(npz_output_path, keypoints_17_output)
 
     # Step 4: Generate 3D Pose from the 2D keypoints
-    get_pose3D(output_dir_current, output_dir_current, save_images=args.save_images, save_demo=args.save_demo)
+    get_pose3D(output_dir_current, output_dir_current, save_images=args.save_images, save_demo=args.save_demo, gpu=args.gpu, causal=args.causal)
 
 if __name__ == '__main__':
     main()
