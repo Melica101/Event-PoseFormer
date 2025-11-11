@@ -19,7 +19,7 @@ import json
 import pandas as pd
 
 # Now import the necessary libraries from PoseFormer and hpe-core
-sys.path.append(os.getcwd() + '\PoseFormerV2-main')
+sys.path.append(os.path.join(os.getcwd(), 'PoseFormerV2-main'))
 
 # PoseFormer imports (originally in PoseFormerV2-main\demo\vis1.py)
 from common.model_poseformer import PoseTransformerV2 as Model
@@ -36,7 +36,7 @@ import numpy as np
 import sys, csv
 import h5py
 
-sys.path.append(os.getcwd() + '\hpe-core')
+sys.path.append(os.path.join(os.getcwd(), 'hpe-core'))
 
 from datasets.utils.parsing import import_yarp_skeleton_data, batchIterator
 from datasets.utils.events_representation import EROS, eventFrame

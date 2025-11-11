@@ -46,11 +46,9 @@ absl-py==2.3.1
 albucore==0.0.24
 albumentations==2.0.8
 annotated-types==0.7.0
-bimvee==1.0.23
 colorama==0.4.6
 coloredlogs==15.0.1
 Deprecated==1.2.18
-dv==1.0.12
 flatbuffers
 grpcio
 h5py
