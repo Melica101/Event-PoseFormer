@@ -365,7 +365,7 @@ def save_predictions_3d(all_predictions, output_dir, filename='predictions_3d.np
 def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=False, causal=False):
     args = argparse.Namespace(
         embed_dim_ratio=32, depth=4, frames=243, number_of_kept_frames=27,
-        number_of_kept_coeffs=27, pad=(243 - 1) // 2, previous_dir='PoseformerV2-main/checkpoint/',
+        number_of_kept_coeffs=27, pad=(243 - 1) // 2, previous_dir='PoseFormerV2-main/checkpoint/',
         n_joints=17, out_joints=17
     )
 
