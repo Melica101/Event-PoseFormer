@@ -326,7 +326,7 @@ def showimage(ax, img):
     plt.axis('off')
     ax.imshow(img)
     
-def load_model_weights(model, ckpt_path, device):
+def load_model_weights(model, ckpt_path, device, gpu):
     ckpt = torch.load(ckpt_path, map_location=device)
 
     # Accept common layouts
@@ -336,10 +336,11 @@ def load_model_weights(model, ckpt_path, device):
         or ckpt.get("model")
         or ckpt  # raw state_dict
     )
-
-    # If keys are like "module.xxx", strip the prefix
-    if any(k.startswith("module.") for k in state.keys()):
-        state = {k.replace("module.", "", 1): v for k, v in state.items()}
+    
+    if not gpu:
+        # If keys are like "module.xxx", strip the prefix
+        if any(k.startswith("module.") for k in state.keys()):
+            state = {k.replace("module.", "", 1): v for k, v in state.items()}
 
     # Try strict load; if it fails, report useful diffs
     try:
@@ -382,7 +383,7 @@ def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=Fal
 
     # Load weights
     model_path = sorted(glob.glob(os.path.join(args.previous_dir, '27_243_45.2.bin')))[0]
-    load_model_weights(model, model_path, device)
+    load_model_weights(model, model_path, device, gpu)
     model.eval()
 
     # Load 2D keypoints
