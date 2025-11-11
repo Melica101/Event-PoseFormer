@@ -392,8 +392,6 @@ def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=Fal
 
     output_dir_2D = output_dir + '/pose2D/'
     output_dir_3D = output_dir + '/pose3D/'
-    os.makedirs(output_dir_2D, exist_ok=True)
-    os.makedirs(output_dir_3D, exist_ok=True)
 
     all_predictions = []
     print("Starting 3D pose estimation...")
@@ -488,6 +486,8 @@ def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=Fal
         post_out[:, 2] -= np.min(post_out[:, 2])
 
         if save_images:
+            os.makedirs(output_dir_2D, exist_ok=True)
+            os.makedirs(output_dir_3D, exist_ok=True)
             # after padding input_2D_no to (T_window=args.frames, J, 2)
             kps_curr = input_2D_no[args.pad, :, :2]   # shape (J,2), pixels
             image = show2Dpose(kps_curr, copy.deepcopy(img))
@@ -553,6 +553,7 @@ def main():
     parser.add_argument('--output_dir', type=str, required=True, help='Output directory for results')
     parser.add_argument('--write_csv', type=str2bool, nargs='?', const=True, default=True, help='Write 2D keypoints to CSV')
     parser.add_argument("--write_video", type=str2bool, nargs='?', const=True, default=True, help="Write event video")
+    parser.add_argument("--skip_2d", action='store_true', help="Skip 2D pose estimation step")
     parser.add_argument('--save_images', action='store_true', help='Save 2D and 3D pose images (optional)')
     parser.add_argument('--save_demo', action='store_true', help='Generate demo video (optional)')
     parser.add_argument('--skip', type=str, default=None, help='Skip range of frames')
@@ -577,16 +578,17 @@ def main():
     # Step 1: Process Event Data into 2D Pose Predictions
     output_dir_current = os.path.join(args.output_dir, f'{os.path.split(os.path.split(args.event_input_path)[0])[1]}')
     os.makedirs(output_dir_current, exist_ok=True)
-    save_event_video_and_csv(args.event_input_path, output_dir_current, args)
+    if not args.skip_2d:
+       save_event_video_and_csv(args.event_input_path, output_dir_current, args)
 
-    # Step 2: Convert CSV to NPZ
-    csv_input_path = os.path.join(output_dir_current, "moveEnet_keypoints.csv")
-    npz_output_path = os.path.join(output_dir_current, "moveEnet_keypoints.npz")
-    convert_csv_to_npz(csv_input_path, npz_output_path)
+       # Step 2: Convert CSV to NPZ
+       csv_input_path = os.path.join(output_dir_current, "moveEnet_keypoints.csv")
+       npz_output_path = os.path.join(output_dir_current, "moveEnet_keypoints.npz")
+       convert_csv_to_npz(csv_input_path, npz_output_path)
 
-    # Step 3: Convert 13-joint keypoints to 17-joint keypoints
-    keypoints_17_output = os.path.join(output_dir_current, "keypoints_17.npz")
-    convert_13_to_17_joints(npz_output_path, keypoints_17_output)
+       # Step 3: Convert 13-joint keypoints to 17-joint keypoints
+       keypoints_17_output = os.path.join(output_dir_current, "keypoints_17.npz")
+       convert_13_to_17_joints(npz_output_path, keypoints_17_output)
 
     # Step 4: Generate 3D Pose from the 2D keypoints
     get_pose3D(output_dir_current, output_dir_current, save_images=args.save_images, save_demo=args.save_demo, gpu=args.gpu, causal=args.causal)
