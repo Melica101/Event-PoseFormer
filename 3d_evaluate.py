@@ -197,7 +197,12 @@ def main(pred_path, subject_name, activity_name, frame_idx=0, plot=False):
         predictions = predictions.reshape(num_frames, 17, 3)
     else:
         num_frames = predictions.shape[0]
+    
+    fps_pred = 100
+    fps_gt = 50
 
+    predictions, gt_poses = match_fps(predictions, gt_poses, fps_pred, fps_gt)
+    
     print("Predictions shape:", predictions.shape)
     print("GT shape:", gt_poses.shape)
 
@@ -241,6 +246,30 @@ def main(pred_path, subject_name, activity_name, frame_idx=0, plot=False):
 
     # === Plot skeleton at a specific frame ===
     plot_skeleton_3d(pred_aligned, gt_aligned, frame_idx)
+    
+def match_fps(predictions, gt_poses, fps_pred, fps_gt):
+    """f
+    Downsample the higher-FPS sequence so both run at the same FPS.
+    Assumes integer ratio (e.g., 50 -> 25, 60 -> 30, etc.).
+    """
+    if fps_pred == fps_gt:
+        return predictions, gt_poses
+
+    if fps_gt > fps_pred:
+        ratio = fps_gt / fps_pred
+        if abs(ratio - round(ratio)) > 1e-6:
+            raise ValueError("Non-integer FPS ratio, need interpolation.")
+        step = int(round(ratio))
+        gt_poses = gt_poses[::step]
+    else:
+        ratio = fps_pred / fps_gt
+        if abs(ratio - round(ratio)) > 1e-6:
+            raise ValueError("Non-integer FPS ratio, need interpolation.")
+        step = int(round(ratio))
+        predictions = predictions[::step]
+
+    return predictions, gt_poses
+
     
 def plot_mpjpe_over_time(mpjpe_values):
     """
